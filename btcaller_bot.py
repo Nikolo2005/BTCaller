@@ -564,9 +564,26 @@ async def monitor_wallets(application: Application) -> None:
                         conn.commit()
                         conn.close()
 
+                        cambio_balance = new_balance - old_balance
+                        if cambio_balance < -0.002039:
+                            tipo_de = "Compra de token"
+                        elif cambio_balance == -0.002039:
+                            tipo_de = "Transferencia de Token"
+                        elif cambio_balance > -0.002039:
+                            tipo_de = "Venta de Token"
+                        else:
+                            tipo_de = "Sin Clasificación"
+
                         solscan_url = f"https://solscan.io/account/{wallet_address}"
                         message = f"""
-                        🚨 *Cambio de saldo en la wallet* {'- 🏷️ ' + tag if tag else ''} `{wallet_address}`\n\n💸 *Grupo:* `{group_name}`\n🪙 *Saldo anterior:* {old_balance:.9f} SOL\n➡️ *Nuevo saldo:* {new_balance:.9f} SOL\n\n🔗 [Ver en Solscan]({solscan_url})
+                        🚨 *Cambio de saldo en la wallet* {'- 🏷️ ' + tag if tag else ''} `{wallet_address}`
+
+💸 *Grupo:* `{group_name}`
+🪙 *Saldo anterior:* {old_balance:.9f} SOL
+💎 *Nuevo saldo:* {new_balance:.9f} SOL
+🛑 *Tipo de cambio:* {tipo_de}
+
+🔗 [Ver en Solscan]({solscan_url})
                         """
 
                         await application.bot.send_message(
@@ -575,6 +592,7 @@ async def monitor_wallets(application: Application) -> None:
                             parse_mode="Markdown"
                         )
         await asyncio.sleep(10)
+
 
 
 

@@ -54,7 +54,6 @@ def save_group(chat_id, group_name):
     conn.commit()
     conn.close()
 
-
 # Función para guardar una wallet en la base de datos
 def save_wallet(chat_id, group_name, wallet_address, balance, tag=None):
     conn = sqlite3.connect('wallets.db')
@@ -63,7 +62,6 @@ def save_wallet(chat_id, group_name, wallet_address, balance, tag=None):
                    (chat_id, group_name, wallet_address, balance, tag))
     conn.commit()
     conn.close()
-
 
 # Función para obtener el saldo de una wallet de Solana
 def get_solana_balance(wallet_address: str) -> float:
@@ -87,10 +85,9 @@ def get_solana_balance(wallet_address: str) -> float:
         print(f'Error al obtener el saldo: {str(e)}')
         return -1
 
-
 # Función para manejar la entrada de nombre de grupo
 async def handle_group_name_input(update: Update, context: CallbackContext) -> None:
-    if "awaiting_group_name" in context.user_data:
+    if context.user_data.get("state") == "awaiting_group_name":
         group_name = update.message.text.strip()
         chat_id = update.message.chat_id
 
@@ -114,10 +111,7 @@ async def handle_group_name_input(update: Update, context: CallbackContext) -> N
             save_group(chat_id, group_name)
             await update.message.reply_text(f"✅ Grupo '{group_name}' creado exitosamente.")
         await list_groups(update, context)
-
-        
-
-
+        context.user_data["state"] = None  # Restablecer el estado
 
 # Validar nombre de grupo
 def is_valid_group_name(group_name: str) -> bool:
@@ -159,7 +153,6 @@ async def show_main_menu(update: Update, context: CallbackContext, message: str 
     elif update.callback_query:
         await update.callback_query.message.reply_text(welcome_message, reply_markup=keyboard, parse_mode="Markdown")
 
-
 # Función para manejar el comando /start
 async def start(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
@@ -169,8 +162,7 @@ async def create_group(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("Envía el nombre del grupo que deseas crear.")
-    context.user_data["awaiting_group_name"] = True
-
+    context.user_data["state"] = "awaiting_group_name"
 
 # Función para listar grupos
 async def list_groups(update: Update, context: CallbackContext) -> None:
@@ -225,7 +217,6 @@ async def list_groups(update: Update, context: CallbackContext) -> None:
         elif update.message:
             await update.message.reply_text(message, reply_markup=keyboard)
 
-
 async def toggle_notifications(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -250,7 +241,6 @@ async def toggle_notifications(update: Update, context: CallbackContext) -> None
         conn.close()
         await query.answer("⚠️ El grupo no existe.")
 
-
 async def main_menu(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
@@ -274,21 +264,22 @@ async def remove_wallet(update: Update, context: CallbackContext) -> None:
             f"Envía las direcciones de wallet que deseas eliminar del grupo `{group_name}`, separadas por espacios.",
             parse_mode="Markdown"
         )
-        context.user_data["awaiting_wallet_removal"] = group_name
+        context.user_data["state"] = "awaiting_wallet_removal"
+        context.user_data["group_name"] = group_name
     else:
         await query.answer("No hay wallets para eliminar.")
         await query.edit_message_text("⚠️ No hay wallets en el grupo.")
 
-
 # Combina manejadores de texto en una sola función
 async def handle_text_input(update: Update, context: CallbackContext) -> None:
-    if "awaiting_wallet_removal" in context.user_data:
+    state = context.user_data.get("state")
+    if state == "awaiting_wallet_removal":
         await handle_wallet_removal(update, context)
-    elif "awaiting_wallet" in context.user_data:
+    elif state == "awaiting_wallet":
         await handle_wallet_input(update, context)
-    elif "awaiting_group_name" in context.user_data:
+    elif state == "awaiting_group_name":
         await handle_group_name_input(update, context)
-    elif "editing_tag_wallet" in context.user_data:
+    elif state == "editing_tag_wallet":
         await set_tag(update, context)
     else:
         # Mostrar el menú principal si no hay contexto pendiente
@@ -297,11 +288,10 @@ async def handle_text_input(update: Update, context: CallbackContext) -> None:
         )
         await show_main_menu(update, context)
 
-
 # Función para manejar la eliminación de wallets
 async def handle_wallet_removal(update: Update, context: CallbackContext) -> None:
-    if "awaiting_wallet_removal" in context.user_data:
-        group_name = context.user_data.pop("awaiting_wallet_removal", None)
+    if context.user_data.get("state") == "awaiting_wallet_removal":
+        group_name = context.user_data.pop("group_name", None)
         wallet_addresses = update.message.text.strip().split()
         chat_id = update.message.chat_id
 
@@ -318,6 +308,7 @@ async def handle_wallet_removal(update: Update, context: CallbackContext) -> Non
         await update.message.reply_text(f"✅ Wallets eliminadas del grupo `{group_name}`.")
         # Regresa a la vista del grupo
         await show_group_wallets(update, context, chat_id, group_name)
+        context.user_data["state"] = None  # Restablecer el estado
     else:
         await update.message.reply_text("No hay wallets pendientes para eliminar.")
 
@@ -356,8 +347,6 @@ async def show_group_wallets(update: Update, context: CallbackContext, chat_id: 
         ])
 
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode="Markdown")
-
-
 
 # Función para ver un grupo y mostrar la opción de agregar wallet
 async def view_group(update: Update, context: CallbackContext) -> None:
@@ -421,17 +410,17 @@ async def edit_tag(update: Update, context: CallbackContext) -> None:
 
     if existing_tag:
         # Si existe la wallet, guarda la dirección para editar el tag
-        context.user_data["editing_tag_wallet"] = wallet_address
+        context.user_data["state"] = "editing_tag_wallet"
+        context.user_data["wallet_address"] = wallet_address
         await update.message.reply_text(f"Envía el nuevo tag para la wallet: `{wallet_address}`")
     else:
         await update.message.reply_text(f"⚠️ La wallet `{wallet_address}` no se encuentra en el sistema.")
 
-
 # Función para actualizar el tag
 async def set_tag(update: Update, context: CallbackContext) -> None:
-    if "editing_tag_wallet" in context.user_data:
+    if context.user_data.get("state") == "editing_tag_wallet":
         chat_id = update.message.chat_id
-        wallet_address = context.user_data.pop("editing_tag_wallet")
+        wallet_address = context.user_data.pop("wallet_address")
         new_tag = update.message.text.strip()
 
         # Actualiza el tag en la base de datos
@@ -444,9 +433,9 @@ async def set_tag(update: Update, context: CallbackContext) -> None:
 
         # Confirma que el tag fue actualizado y restablece el estado
         await update.message.reply_text(f"✅ El tag para la wallet `{wallet_address}` ha sido actualizado a: `{new_tag}`.")
+        context.user_data["state"] = None  # Restablecer el estado
     else:
         await update.message.reply_text("⚠️ No estás editando un tag actualmente.")
-
 
 # Función para agregar una wallet al grupo
 async def add_wallet(update: Update, context: CallbackContext) -> None:
@@ -467,18 +456,16 @@ async def add_wallet(update: Update, context: CallbackContext) -> None:
             f"Envía la dirección de la wallet para agregarla al grupo `{group_name}`.",
             parse_mode="Markdown"
         )
-        context.user_data["awaiting_wallet"] = group_name  # Marca que se espera una wallet
+        context.user_data["state"] = "awaiting_wallet"
+        context.user_data["group_name"] = group_name  # Marca que se espera una wallet
     else:
         await query.answer("El grupo no existe.")
         await query.edit_message_text("⚠️ El grupo ya no existe.")
 
-
-
-
 # Función para manejar la entrada de direcciones de wallet
 async def handle_wallet_input(update: Update, context: CallbackContext) -> None:
-    if "awaiting_wallet" in context.user_data:
-        group_name = context.user_data.pop("awaiting_wallet")
+    if context.user_data.get("state") == "awaiting_wallet":
+        group_name = context.user_data.pop("group_name")
         wallet_addresses = update.message.text.strip().split()
         chat_id = update.message.chat_id
 
@@ -508,7 +495,7 @@ async def handle_wallet_input(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(response, parse_mode="Markdown")
         # Regresa a la vista del grupo
         await show_group_wallets(update, context, chat_id, group_name)
-
+        context.user_data["state"] = None  # Restablecer el estado
 
 # Función para eliminar un grupo
 async def delete_group(update: Update, context: CallbackContext) -> None:
@@ -525,7 +512,6 @@ async def delete_group(update: Update, context: CallbackContext) -> None:
 
     await query.answer(f"✅ Grupo `{group_name}` eliminado.")
     await list_groups(update, context)  # Redirige a la lista de grupos
-
 
 # Función para monitorear las wallets y enviar un mensaje bonito
 async def monitor_wallets(application: Application) -> None:
@@ -593,9 +579,6 @@ async def monitor_wallets(application: Application) -> None:
                         )
         await asyncio.sleep(10)
 
-
-
-
 # Comando principal
 async def main():
     init_db()
@@ -613,7 +596,6 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     application.add_handler(CommandHandler("edit_tag", edit_tag))
     application.add_handler(CallbackQueryHandler(toggle_notifications, pattern=r'^toggle_notifications_'))
-
 
     # Inicia el monitoreo de wallets en segundo plano
     asyncio.create_task(monitor_wallets(application))
